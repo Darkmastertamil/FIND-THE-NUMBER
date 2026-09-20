@@ -27,8 +27,12 @@ export interface InternalRoom {
   possibleMin: number;
   possibleMax: number;
   guesses: GuessRecord[];
+  firstGuesserId: string | null;
   currentGuesserId: string | null;
   guesserCycle: string[]; // shuffle bag of player IDs
+  playerSecrets: Record<string, number>; // secret number chosen by each player
+  playerLockedSecrets: Record<string, boolean>; // whether player has locked their secret
+  playerRanges: Record<string, { min: number; max: number }>; // search range for each player
   turnExpiresAt: number | null;
   turnDuration: number;
   turnTimer: NodeJS.Timeout | null;
@@ -39,6 +43,7 @@ export interface InternalRoom {
     result: GuessEvaluation;
     playerName: string;
     playerId: string;
+    targetPlayerName?: string;
   } | null;
   roundWinner: RoundWinner | null;
   finalResults: FinalResults | null;
@@ -112,10 +117,14 @@ export class GameEngine {
       possibleMin: 1,
       possibleMax: 1000,
       guesses: [],
+      firstGuesserId: null,
       currentGuesserId: null,
       guesserCycle: [],
+      playerSecrets: {},
+      playerLockedSecrets: {},
+      playerRanges: {},
       turnExpiresAt: null,
-      turnDuration: 15000,
+      turnDuration: 30000,
       turnTimer: null,
       wheelTimer: null,
       wheelData: null,
@@ -242,19 +251,35 @@ export class GameEngine {
     return { success: true };
   }
 
+  public getTargetPlayer(room: InternalRoom, playerId: string): InternalPlayer | null {
+    const connected = room.players.filter((p) => p.connected);
+    if (connected.length < 2) return null;
+    if (connected.length === 2) {
+      return connected.find((p) => p.id !== playerId) || null;
+    }
+    const idx = connected.findIndex((p) => p.id === playerId);
+    if (idx === -1) return connected[0];
+    return connected[(idx + 1) % connected.length];
+  }
+
   public startRound(room: InternalRoom): WheelData | null {
     this.clearTimers(room);
 
     room.secretNumber = null;
+    room.playerSecrets = {};
+    room.playerLockedSecrets = {};
+    room.playerRanges = {};
     room.possibleMin = 1;
     room.possibleMax = 1000;
     room.guesses = [];
+    room.firstGuesserId = null;
     room.currentGuesserId = null;
     room.guesserCycle = [];
     room.wheelData = null;
     room.lastGuessResult = null;
     room.roundWinner = null;
     room.isProcessingAction = false;
+    room.turnDuration = 30000;
 
     const connectedPlayers = room.players.filter((p) => p.connected);
     if (connectedPlayers.length < 2) {
@@ -263,10 +288,14 @@ export class GameEngine {
       return null;
     }
 
-    return this.prepareSetterWheelSelection(room);
+    for (const p of connectedPlayers) {
+      room.playerRanges[p.id] = { min: 1, max: 1000 };
+    }
+
+    return this.prepareFirstGuesserWheelSelection(room);
   }
 
-  public prepareSetterWheelSelection(room: InternalRoom): WheelData | null {
+  public prepareFirstGuesserWheelSelection(room: InternalRoom): WheelData | null {
     this.clearTimers(room);
 
     const connectedPlayers = room.players.filter((p) => p.connected);
@@ -276,13 +305,13 @@ export class GameEngine {
       return null;
     }
 
-    // Determine setter fairly across rounds using setterOrder rotation
+    // Determine who starts first fairly across rounds
     const availableOrder = room.setterOrder.filter((id) =>
       connectedPlayers.some((p) => p.id === id)
     );
     const candidateOrder = availableOrder.length > 0 ? availableOrder : connectedPlayers.map((p) => p.id);
-    const chosenSetterId = candidateOrder[room.setterIndex % candidateOrder.length];
-    const selectedPlayer = connectedPlayers.find((p) => p.id === chosenSetterId) || connectedPlayers[0];
+    const chosenPlayerId = candidateOrder[room.setterIndex % candidateOrder.length];
+    const selectedPlayer = connectedPlayers.find((p) => p.id === chosenPlayerId) || connectedPlayers[0];
     const selectedIndex = connectedPlayers.findIndex((p) => p.id === selectedPlayer.id);
 
     // Calculate exact target rotation so top pointer lands on selected player's segment
@@ -307,97 +336,95 @@ export class GameEngine {
       })),
       spinDurationMs,
       spinTargetDegrees,
-      purpose: 'setter',
+      purpose: 'first_guesser',
     };
 
     room.status = 'wheel_spinning';
     room.wheelData = wheelData;
-    room.setterId = selectedPlayer.id;
+    room.firstGuesserId = selectedPlayer.id;
 
     return wheelData;
   }
 
-  public transitionToSetterSelection(room: InternalRoom): void {
+  public transitionToNumberSelection(room: InternalRoom): void {
     this.clearTimers(room);
     room.status = 'setter_selection';
-    room.secretNumber = null;
     room.isProcessingAction = false;
   }
 
-  public setSecretNumber(
+  public setPlayerSecretNumber(
     room: InternalRoom,
     playerId: string,
     secret: number
-  ): { success: boolean; error?: string } {
+  ): { success: boolean; error?: string; allLocked?: boolean } {
     if (room.status !== 'setter_selection') {
-      return { success: false, error: 'Secret number can only be set during setter phase.' };
-    }
-
-    if (room.setterId !== playerId) {
-      return { success: false, error: 'Only the designated Number Setter can choose the secret number.' };
+      return { success: false, error: 'Secret numbers can only be set during the number selection phase.' };
     }
 
     if (!Number.isInteger(secret) || secret < 1 || secret > 1000) {
       return { success: false, error: 'Secret number must be an integer between 1 and 1000.' };
     }
 
-    room.secretNumber = secret;
-    return { success: true };
+    room.playerSecrets[playerId] = secret;
+    room.playerLockedSecrets[playerId] = true;
+
+    const connectedPlayers = room.players.filter((p) => p.connected);
+    const allLocked =
+      connectedPlayers.length >= 2 &&
+      connectedPlayers.every((p) => room.playerLockedSecrets[p.id]);
+
+    return { success: true, allLocked };
   }
 
-  // Starts the guessing phase after setter has locked the secret number
+  // Starts the guessing phase after all players have chosen their secret numbers
   public startGuessingPhase(room: InternalRoom): InternalPlayer | null {
     this.clearTimers(room);
     room.status = 'guessing';
-    room.possibleMin = 1;
-    room.possibleMax = 1000;
     room.guesses = [];
     room.lastGuessResult = null;
+    room.turnDuration = 30000; // 30 seconds for each guess!
 
-    // Guessers are all connected players except the setter
-    const eligibleGuessers = room.players.filter(
-      (p) => p.connected && p.id !== room.setterId
-    );
-
-    if (eligibleGuessers.length === 0) {
+    const connectedPlayers = room.players.filter((p) => p.connected);
+    if (connectedPlayers.length < 2) {
       room.isPaused = true;
-      room.pauseMessage = 'Waiting for eligible guessing players...';
+      room.pauseMessage = 'Waiting for players to continue...';
       return null;
     }
 
-    // Initialize guesser cycle
-    room.guesserCycle = eligibleGuessers.map((p) => p.id);
-    const firstGuesser = eligibleGuessers[0];
+    for (const p of connectedPlayers) {
+      room.playerRanges[p.id] = { min: 1, max: 1000 };
+    }
+
+    // Guesser who starts first was chosen by the wheel
+    const firstGuesser =
+      connectedPlayers.find((p) => p.id === room.firstGuesserId) || connectedPlayers[0];
     room.currentGuesserId = firstGuesser.id;
     room.turnExpiresAt = Date.now() + room.turnDuration;
     room.isProcessingAction = false;
     return firstGuesser;
   }
 
-  // Advances turn to the next eligible guesser in sequence
+  // Advances turn to the next player with 30 seconds
   public advanceGuesserTurn(room: InternalRoom): InternalPlayer | null {
     this.clearTimers(room);
     if (room.status !== 'guessing') return null;
 
-    const eligibleGuessers = room.players.filter(
-      (p) => p.connected && p.id !== room.setterId
-    );
-
-    if (eligibleGuessers.length === 0) {
+    const connectedPlayers = room.players.filter((p) => p.connected);
+    if (connectedPlayers.length < 2) {
       room.isPaused = true;
-      room.pauseMessage = 'Waiting for eligible guessing players...';
+      room.pauseMessage = 'Waiting for players to continue...';
       return null;
     }
 
     let nextIdx = 0;
     if (room.currentGuesserId) {
-      const currentIdx = eligibleGuessers.findIndex((p) => p.id === room.currentGuesserId);
+      const currentIdx = connectedPlayers.findIndex((p) => p.id === room.currentGuesserId);
       if (currentIdx !== -1) {
-        nextIdx = (currentIdx + 1) % eligibleGuessers.length;
+        nextIdx = (currentIdx + 1) % connectedPlayers.length;
       }
     }
 
-    const nextGuesser = eligibleGuessers[nextIdx];
+    const nextGuesser = connectedPlayers[nextIdx];
     room.currentGuesserId = nextGuesser.id;
     room.turnExpiresAt = Date.now() + room.turnDuration;
     room.isProcessingAction = false;
@@ -424,37 +451,42 @@ export class GameEngine {
       return { success: false, error: 'It is not your turn to guess.' };
     }
 
-    if (room.setterId === playerId) {
-      return { success: false, error: 'The Number Setter cannot guess in their own round.' };
-    }
-
     if (!Number.isInteger(guessNumber) || guessNumber < 1 || guessNumber > 1000) {
       return { success: false, error: 'Guess must be an integer between 1 and 1000.' };
     }
 
     // Reject duplicate guess by the SAME player in this round
     const duplicate = room.guesses.some(
-      (g) => g.playerId === playerId && g.guess === guessNumber
+      (g) => g.playerId === playerId && g.guess === guessNumber && g.round === room.round
     );
     if (duplicate) {
-      // Do not consume turn
-      return { success: false, error: '⚠️ You already guessed that number.' };
+      return { success: false, error: '⚠️ You already guessed that number in this round.' };
     }
 
-    if (room.secretNumber === null) {
-      return { success: false, error: 'Secret number has not been set.' };
+    const targetPlayer = this.getTargetPlayer(room, playerId);
+    if (!targetPlayer) {
+      return { success: false, error: 'Target opponent not found.' };
+    }
+
+    const targetSecret = room.playerSecrets[targetPlayer.id];
+    if (targetSecret === undefined || targetSecret === null) {
+      return { success: false, error: 'Opponent has not set their secret number.' };
+    }
+
+    if (!room.playerRanges[playerId]) {
+      room.playerRanges[playerId] = { min: 1, max: 1000 };
     }
 
     const player = room.players.find((p) => p.id === playerId);
     const playerName = player ? player.name : 'Unknown';
 
     let result: GuessEvaluation;
-    if (guessNumber < room.secretNumber) {
+    if (guessNumber < targetSecret) {
       result = 'HIGHER';
-      room.possibleMin = Math.max(room.possibleMin, guessNumber + 1);
-    } else if (guessNumber > room.secretNumber) {
+      room.playerRanges[playerId].min = Math.max(room.playerRanges[playerId].min, guessNumber + 1);
+    } else if (guessNumber > targetSecret) {
       result = 'LOWER';
-      room.possibleMax = Math.min(room.possibleMax, guessNumber - 1);
+      room.playerRanges[playerId].max = Math.min(room.playerRanges[playerId].max, guessNumber - 1);
     } else {
       result = 'CORRECT';
     }
@@ -467,6 +499,7 @@ export class GameEngine {
       result,
       round: room.round,
       timestamp: Date.now(),
+      targetPlayerName: targetPlayer.name,
     };
 
     room.guesses.push(record);
@@ -475,12 +508,13 @@ export class GameEngine {
       result,
       playerName,
       playerId,
+      targetPlayerName: targetPlayer.name,
     };
 
     if (result === 'CORRECT') {
       this.clearTimers(room);
-      // Calculate score: Base 100 - (5 * incorrect guesses), min 10 points
-      const incorrectGuessesInRound = room.guesses.filter((g) => g.result !== 'CORRECT').length;
+      const playerGuesses = room.guesses.filter((g) => g.playerId === playerId && g.round === room.round);
+      const incorrectGuessesInRound = playerGuesses.filter((g) => g.result !== 'CORRECT').length;
       const scoreAwarded = Math.max(10, 100 - incorrectGuessesInRound * 5);
 
       if (player) {
@@ -491,9 +525,10 @@ export class GameEngine {
       const roundWinner: RoundWinner = {
         playerId,
         playerName,
-        secretNumber: room.secretNumber,
+        secretNumber: targetSecret,
         scoreAwarded,
         incorrectGuessesInRound,
+        targetPlayerName: targetPlayer.name,
       };
 
       room.roundWinner = roundWinner;
@@ -664,10 +699,23 @@ export class GameEngine {
   // CRITICAL: Never leaks the secret number to guessers!
   public getClientRoomState(room: InternalRoom, requestingPlayerId?: string): ClientRoomState {
     const isRoundEnded = room.status === 'round_result' || room.status === 'final_result';
-    const isSetter = room.setterId === requestingPlayerId;
 
-    const setterPlayer = room.players.find((p) => p.id === room.setterId);
+    const connectedPlayers = room.players.filter((p) => p.connected);
+    const targetPlayer = requestingPlayerId ? this.getTargetPlayer(room, requestingPlayerId) : null;
     const guesserPlayer = room.players.find((p) => p.id === room.currentGuesserId);
+    const firstGuesser = room.players.find((p) => p.id === room.firstGuesserId);
+
+    const myRange = requestingPlayerId && room.playerRanges[requestingPlayerId]
+      ? room.playerRanges[requestingPlayerId]
+      : { min: 1, max: 1000 };
+
+    const myLockedSecret = requestingPlayerId && room.playerSecrets[requestingPlayerId] !== undefined
+      ? room.playerSecrets[requestingPlayerId]
+      : null;
+
+    const hasLockedSecret = requestingPlayerId ? !!room.playerLockedSecrets[requestingPlayerId] : false;
+    const lockedPlayersCount = connectedPlayers.filter((p) => room.playerLockedSecrets[p.id]).length;
+    const allSecretsLocked = connectedPlayers.length >= 2 && lockedPlayersCount === connectedPlayers.length;
 
     return {
       code: room.code,
@@ -684,12 +732,12 @@ export class GameEngine {
       status: room.status,
       round: room.round,
       maxRounds: room.maxRounds,
-      setterId: room.setterId,
-      setterName: setterPlayer ? setterPlayer.name : null,
+      setterId: null,
+      setterName: null,
       currentGuesserId: room.currentGuesserId,
       currentGuesserName: guesserPlayer ? guesserPlayer.name : null,
-      possibleMin: room.possibleMin,
-      possibleMax: room.possibleMax,
+      possibleMin: myRange.min,
+      possibleMax: myRange.max,
       guesses: room.guesses,
       turnExpiresAt: room.turnExpiresAt,
       turnDuration: room.turnDuration,
@@ -697,7 +745,14 @@ export class GameEngine {
       lastGuessResult: room.lastGuessResult,
       roundWinner: isRoundEnded ? room.roundWinner : null,
       finalResults: room.finalResults,
-      myLockedSecret: isSetter ? room.secretNumber : null,
+      myLockedSecret,
+      hasLockedSecret,
+      allSecretsLocked,
+      lockedPlayersCount,
+      totalPlayersCount: connectedPlayers.length,
+      targetOpponentName: targetPlayer ? targetPlayer.name : null,
+      whoStartsFirstId: room.firstGuesserId,
+      whoStartsFirstName: firstGuesser ? firstGuesser.name : null,
       isPaused: room.isPaused,
       pauseMessage: room.pauseMessage,
     };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Target, ArrowUp, ArrowDown, AlertCircle, Sparkles, Send, Lock } from 'lucide-react';
+import { Target, ArrowUp, ArrowDown, AlertCircle, Send, Lock, ShieldCheck } from 'lucide-react';
 import { ClientRoomState } from '../types';
 import { TimerBar } from '../components/TimerBar';
 import { RangeVisualizer } from '../components/RangeVisualizer';
@@ -25,7 +25,7 @@ export const GuessingScreen: React.FC<GuessingScreenProps> = ({
   onClearActionError,
 }) => {
   const isMyTurn = room.currentGuesserId === currentUserId;
-  const isSetter = room.setterId === currentUserId;
+  const targetOpponent = room.targetOpponentName || 'Opponent';
 
   const [guessInput, setGuessInput] = useState<string>('');
   const [localError, setLocalError] = useState<string | null>(null);
@@ -56,7 +56,7 @@ export const GuessingScreen: React.FC<GuessingScreenProps> = ({
       return;
     }
 
-    // Client-side quick check for duplicate guess by the same user in current round
+    // Client-side check for duplicate guess by the same user in current round
     const alreadyGuessed = room.guesses.some(
       (g) => g.playerId === currentUserId && g.guess === parsed && g.round === room.round
     );
@@ -74,14 +74,14 @@ export const GuessingScreen: React.FC<GuessingScreenProps> = ({
 
   return (
     <div className="flex-1 flex flex-col items-center justify-start p-3 sm:p-4 max-w-4xl mx-auto w-full space-y-4">
-      {/* Top Banner: Setter secret or Last Guess announcement */}
-      {isSetter && (
-        <div className="w-full max-w-lg p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-mono flex items-center justify-between shadow-xs">
+      {/* Top Status Bar: Your own secret number protected */}
+      {room.myLockedSecret !== null && (
+        <div className="w-full max-w-lg p-3 rounded-2xl bg-purple-50 border border-purple-200 text-purple-900 text-xs font-mono flex items-center justify-between shadow-xs">
           <div className="flex items-center gap-2 font-bold">
-            <Lock className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>You are the Setter. Secret:</span>
+            <ShieldCheck className="w-4 h-4 text-purple-600 shrink-0" />
+            <span>Your Secret Number (Opponents guess this):</span>
           </div>
-          <span className="text-base font-black text-amber-950 px-3 py-0.5 rounded-xl bg-amber-100 border border-amber-300 shadow-2xs">
+          <span className="text-base font-black text-purple-950 px-3 py-0.5 rounded-xl bg-white border border-purple-300 shadow-2xs">
             {room.myLockedSecret}
           </span>
         </div>
@@ -131,31 +131,36 @@ export const GuessingScreen: React.FC<GuessingScreenProps> = ({
         {isMyTurn ? (
           <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-purple-100/90 border-2 border-purple-400 text-purple-800 font-mono text-sm font-black tracking-widest uppercase shadow-md shadow-purple-100 animate-pulse">
             <Target className="w-4 h-4 text-purple-700" />
-            <span>YOUR TURN TO GUESS!</span>
+            <span>YOUR TURN TO GUESS (30s)!</span>
           </div>
         ) : (
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-purple-200 text-slate-600 font-mono text-xs font-semibold shadow-xs">
             <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping" />
             <span>
-              🎯 <strong className="text-slate-800">{room.currentGuesserName || 'Guesser'}</strong> is guessing...
+              🎯 <strong className="text-slate-800">{room.currentGuesserName || 'Opponent'}</strong> is guessing (30s)...
             </span>
           </div>
         )}
       </div>
 
-      {/* 15-second Authoritative Timer */}
+      {/* 30-second Authoritative Timer */}
       <TimerBar
         expiresAt={room.turnExpiresAt}
         durationMs={room.turnDuration}
         isCurrentUser={isMyTurn}
       />
 
-      {/* Possible Range Visualization */}
-      <RangeVisualizer
-        possibleMin={room.possibleMin}
-        possibleMax={room.possibleMax}
-        lastGuess={room.lastGuessResult?.guess}
-      />
+      {/* Possible Range Visualization for Your Target Guess */}
+      <div className="w-full max-w-lg">
+        <p className="text-xs font-mono text-slate-500 text-center mb-1 font-semibold">
+          Your Search Range for {targetOpponent}'s Secret:
+        </p>
+        <RangeVisualizer
+          possibleMin={room.possibleMin}
+          possibleMax={room.possibleMax}
+          lastGuess={room.lastGuessResult?.guess}
+        />
+      </div>
 
       {/* Guess Input Form for Active Guesser */}
       {isMyTurn ? (
@@ -193,7 +198,7 @@ export const GuessingScreen: React.FC<GuessingScreenProps> = ({
                     onClearActionError();
                   }
                 }}
-                placeholder={`Enter guess (${room.possibleMin} – ${room.possibleMax})`}
+                placeholder={`Guess ${targetOpponent}'s number (${room.possibleMin} – ${room.possibleMax})`}
                 disabled={isLoading}
                 autoFocus
                 className="w-full py-3.5 px-4 rounded-2xl bg-purple-50/50 border-2 border-purple-200 focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100 text-center text-3xl font-mono font-black text-purple-800 placeholder-purple-300 transition outline-none"
@@ -202,7 +207,7 @@ export const GuessingScreen: React.FC<GuessingScreenProps> = ({
 
             {/* Quick Helper buttons for Midpoint calculation */}
             <div className="flex items-center justify-between text-xs font-mono">
-              <span className="text-slate-400 font-medium">Quick suggestions:</span>
+              <span className="text-slate-400 font-medium">Binary search midpoint:</span>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -231,7 +236,7 @@ export const GuessingScreen: React.FC<GuessingScreenProps> = ({
         </div>
       ) : (
         <div className="w-full max-w-lg p-4 rounded-2xl bg-white/90 border border-purple-150 text-center text-slate-500 font-mono text-xs shadow-xs font-medium">
-          Wait for your turn. The Next Guesser Spin Wheel will spin after this guess!
+          Waiting for <strong className="text-slate-700">{room.currentGuesserName || 'opponent'}</strong>. You alternate 30-second guesses!
         </div>
       )}
 

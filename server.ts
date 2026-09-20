@@ -36,11 +36,11 @@ function broadcastRoomState(room: InternalRoom) {
   }
 }
 
-// Helper: Trigger 5-second wheel spin to choose who sets the number for the round
-function triggerSetterWheelSpin(room: InternalRoom) {
+// Helper: Trigger 5-second wheel spin to choose who starts guessing first
+function triggerFirstGuesserWheelSpin(room: InternalRoom) {
   engine.clearTimers(room);
 
-  const wheelData = engine.prepareSetterWheelSelection(room);
+  const wheelData = engine.prepareFirstGuesserWheelSelection(room);
   if (!wheelData) {
     broadcastRoomState(room);
     return;
@@ -54,17 +54,17 @@ function triggerSetterWheelSpin(room: InternalRoom) {
   room.wheelTimer = setTimeout(() => {
     if (room.status !== 'wheel_spinning') return;
 
-    engine.transitionToSetterSelection(room);
+    engine.transitionToNumberSelection(room);
     broadcastRoomState(room);
-    const setterPlayer = room.players.find((p) => p.id === room.setterId);
-    io.to(room.code).emit('setterChosen', {
-      setterId: room.setterId,
-      setterName: setterPlayer ? setterPlayer.name : 'Player',
+    const firstGuesser = room.players.find((p) => p.id === room.firstGuesserId);
+    io.to(room.code).emit('firstGuesserChosen', {
+      firstGuesserId: room.firstGuesserId,
+      firstGuesserName: firstGuesser ? firstGuesser.name : 'Player',
     });
   }, wheelData.spinDurationMs + 1500);
 }
 
-// Helper: Handle when a guesser runs out of 15 seconds
+// Helper: Handle when a guesser runs out of 30 seconds
 function handleTurnTimeout(room: InternalRoom) {
   if (room.status !== 'guessing') return;
 
@@ -73,7 +73,7 @@ function handleTurnTimeout(room: InternalRoom) {
 
   io.to(room.code).emit('turnTimedOut', {
     playerName: guesserName,
-    message: `⏰ Time's up for ${guesserName}!`,
+    message: `⏰ Time's up for ${guesserName}! Turn rotates.`,
   });
 
   // Brief pause before advancing turn to the next guesser
@@ -168,11 +168,11 @@ io.on('connection', (socket: Socket) => {
     }
 
     if (typeof callback === 'function') callback({ success: true });
-    io.to(room.code).emit('roundStarted', { round: room.round, setterId: room.setterId });
-    triggerSetterWheelSpin(room);
+    io.to(room.code).emit('roundStarted', { round: room.round });
+    triggerFirstGuesserWheelSpin(room);
   });
 
-  // SUBMIT SECRET NUMBER (SETTER ONLY)
+  // SUBMIT SECRET NUMBER (BOTH / ALL PLAYERS SIMULTANEOUSLY)
   socket.on(
     'submitSecret',
     ({ code, playerId, secret }: { code: string; playerId: string; secret: number }, callback) => {
@@ -182,33 +182,42 @@ io.on('connection', (socket: Socket) => {
         return;
       }
 
-      const result = engine.setSecretNumber(room, playerId, secret);
+      const result = engine.setPlayerSecretNumber(room, playerId, secret);
       if (!result.success) {
         if (typeof callback === 'function') callback({ success: false, error: result.error });
         return;
       }
 
-      if (typeof callback === 'function') callback({ success: true });
+      if (typeof callback === 'function') callback({ success: true, allLocked: result.allLocked });
 
-      // Notify clients secret is locked
-      io.to(room.code).emit('secretLocked', {
-        message: 'Secret number has been locked! Guessing phase begins now!',
+      const player = room.players.find((p) => p.id === playerId);
+      io.to(room.code).emit('playerSecretLocked', {
+        playerId,
+        playerName: player ? player.name : 'Player',
       });
 
-      // Start guessing phase directly (turn-based guessing)
-      const firstGuesser = engine.startGuessingPhase(room);
       broadcastRoomState(room);
 
-      if (firstGuesser) {
-        io.to(room.code).emit('turnStarted', {
-          guesserId: room.currentGuesserId,
-          expiresAt: room.turnExpiresAt,
-          duration: room.turnDuration,
+      // If all connected players have locked their secret numbers, launch the guessing phase!
+      if (result.allLocked) {
+        io.to(room.code).emit('allSecretsLocked', {
+          message: 'Both players have locked their secrets! The duel begins now!',
         });
 
-        room.turnTimer = setTimeout(() => {
-          handleTurnTimeout(room);
-        }, room.turnDuration);
+        const firstGuesser = engine.startGuessingPhase(room);
+        broadcastRoomState(room);
+
+        if (firstGuesser) {
+          io.to(room.code).emit('turnStarted', {
+            guesserId: room.currentGuesserId,
+            expiresAt: room.turnExpiresAt,
+            duration: room.turnDuration,
+          });
+
+          room.turnTimer = setTimeout(() => {
+            handleTurnTimeout(room);
+          }, room.turnDuration);
+        }
       }
     }
   );
@@ -252,8 +261,6 @@ io.on('connection', (socket: Socket) => {
           result: outcome.result,
           record: outcome.record,
           isCorrect: false,
-          possibleMin: room.possibleMin,
-          possibleMax: room.possibleMax,
         });
         broadcastRoomState(room);
 
@@ -304,7 +311,7 @@ io.on('connection', (socket: Socket) => {
 
     if (typeof callback === 'function') callback({ success: true });
     if (room.status === 'wheel_spinning') {
-      triggerSetterWheelSpin(room);
+      triggerFirstGuesserWheelSpin(room);
     } else {
       broadcastRoomState(room);
     }
@@ -326,7 +333,7 @@ io.on('connection', (socket: Socket) => {
 
     if (typeof callback === 'function') callback({ success: true });
     if (room.status === 'wheel_spinning') {
-      triggerSetterWheelSpin(room);
+      triggerFirstGuesserWheelSpin(room);
     } else {
       broadcastRoomState(room);
     }
@@ -363,7 +370,7 @@ io.on('connection', (socket: Socket) => {
       broadcastRoomState(room);
 
       if (room.status === 'wheel_spinning' && !room.isPaused) {
-        triggerSetterWheelSpin(room);
+        triggerFirstGuesserWheelSpin(room);
       } else if (shouldAdvanceTurn && room.status === 'guessing' && !room.isPaused) {
         setTimeout(() => {
           const nextGuesser = engine.advanceGuesserTurn(room);

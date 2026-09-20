@@ -72,8 +72,12 @@ export default function App() {
       showToast(data.message, 3000);
     };
 
-    const handleSecretLocked = (data: { message: string }) => {
-      showToast(data.message, 2500);
+    const handlePlayerSecretLocked = (data: { playerId: string; playerName: string }) => {
+      showToast(`🔒 ${data.playerName} locked their secret number!`, 2000);
+    };
+
+    const handleAllSecretsLocked = (data: { message: string }) => {
+      showToast(`⚡ ${data.message}`, 2500);
     };
 
     const handleHostTransferred = (data: { hostId: string; hostName: string }) => {
@@ -84,7 +88,8 @@ export default function App() {
     socket.on('disconnect', handleDisconnect);
     socket.on('roomStateUpdate', handleRoomStateUpdate);
     socket.on('turnTimedOut', handleTurnTimedOut);
-    socket.on('secretLocked', handleSecretLocked);
+    socket.on('playerSecretLocked', handlePlayerSecretLocked);
+    socket.on('allSecretsLocked', handleAllSecretsLocked);
     socket.on('hostTransferred', handleHostTransferred);
 
     // Initial state check
@@ -97,7 +102,8 @@ export default function App() {
       socket.off('disconnect', handleDisconnect);
       socket.off('roomStateUpdate', handleRoomStateUpdate);
       socket.off('turnTimedOut', handleTurnTimedOut);
-      socket.off('secretLocked', handleSecretLocked);
+      socket.off('playerSecretLocked', handlePlayerSecretLocked);
+      socket.off('allSecretsLocked', handleAllSecretsLocked);
       socket.off('hostTransferred', handleHostTransferred);
     };
   }, [showToast]);

@@ -46,26 +46,26 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
 
         {/* Rules list */}
         <div className="space-y-3 text-sm">
-          <div className="flex items-start gap-3 p-3 rounded-2xl bg-amber-50/60 border border-amber-100">
-            <span className="w-6 h-6 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-xs font-mono font-black shrink-0 mt-0.5">
+          <div className="flex items-start gap-3 p-3 rounded-2xl bg-purple-50/60 border border-purple-100">
+            <span className="w-6 h-6 rounded-full bg-purple-200 text-purple-800 flex items-center justify-center text-xs font-mono font-black shrink-0 mt-0.5">
               1
             </span>
             <div>
-              <p className="font-bold text-slate-800">Spin Wheel Chooses Number Setter (5s)</p>
+              <p className="font-bold text-slate-800">Spin Wheel Chooses Who Guesses First (5s)</p>
               <p className="text-slate-500 text-xs mt-0.5 font-medium">
-                At the start of every round, the animated spin wheel spins for <span className="text-amber-800 font-mono font-bold">5 seconds</span> to choose the <span className="text-amber-700 font-bold">Number Setter</span>. All players are on the wheel!
+                At the start of each round, the animated spin wheel spins for <span className="text-purple-800 font-mono font-bold">5 seconds</span> to choose which player starts the guessing phase!
               </p>
             </div>
           </div>
 
-          <div className="flex items-start gap-3 p-3 rounded-2xl bg-purple-50/50 border border-purple-100">
-            <span className="w-6 h-6 rounded-full bg-purple-200 text-purple-800 flex items-center justify-center text-xs font-mono font-black shrink-0 mt-0.5">
+          <div className="flex items-start gap-3 p-3 rounded-2xl bg-indigo-50/50 border border-indigo-100">
+            <span className="w-6 h-6 rounded-full bg-indigo-200 text-indigo-800 flex items-center justify-center text-xs font-mono font-black shrink-0 mt-0.5">
               2
             </span>
             <div>
-              <p className="font-bold text-slate-800">Setter Chooses Secret Number</p>
+              <p className="font-bold text-slate-800">Both Players Choose Secrets Simultaneously</p>
               <p className="text-slate-500 text-xs mt-0.5 font-medium">
-                The chosen Number Setter locks in a secret integer between <span className="text-purple-900 font-mono font-bold">1 and 1000</span>. The number stays strictly hidden from guessers.
+                Both players lock in their secret number between <span className="text-indigo-900 font-mono font-bold">1 and 1000</span> simultaneously. Secrets remain encrypted and hidden from opponents.
               </p>
             </div>
           </div>
@@ -75,9 +75,9 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
               3
             </span>
             <div>
-              <p className="font-bold text-slate-800">Turn-Based Guessing (15s Turns)</p>
+              <p className="font-bold text-slate-800">Turn-Based Guessing Duel (30s Turns)</p>
               <p className="text-slate-500 text-xs mt-0.5 font-medium">
-                The remaining players take turns guessing. Each player has <span className="text-pink-700 font-mono font-bold">15 seconds</span> to submit their guess before the turn rotates.
+                Player 1 takes a guess at Player 2's secret, then Player 2 guesses at Player 1's secret. You have <span className="text-pink-700 font-mono font-bold">30 seconds</span> for each guess!
               </p>
             </div>
           </div>

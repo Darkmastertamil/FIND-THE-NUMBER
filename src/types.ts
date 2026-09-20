@@ -26,6 +26,7 @@ export interface GuessRecord {
   result: GuessEvaluation;
   round: number;
   timestamp: number;
+  targetPlayerName?: string;
 }
 
 export interface WheelData {
@@ -38,7 +39,7 @@ export interface WheelData {
   }[];
   spinDurationMs: number;
   spinTargetDegrees: number; // exact final rotation angle so wheel stops on selected player
-  purpose?: 'setter' | 'guesser';
+  purpose?: 'setter' | 'first_guesser';
 }
 
 export interface RoundWinner {
@@ -47,6 +48,7 @@ export interface RoundWinner {
   secretNumber: number;
   scoreAwarded: number;
   incorrectGuessesInRound: number;
+  targetPlayerName?: string;
 }
 
 export interface FinalRanking {
@@ -86,11 +88,19 @@ export interface ClientRoomState {
     result: GuessEvaluation;
     playerName: string;
     playerId: string;
+    targetPlayerName?: string;
   } | null;
   roundWinner: RoundWinner | null;
   finalResults: FinalResults | null;
-  // If the requesting player is the setter, they get their own locked secret back for reference
+  // Personalized state for the requesting player
   myLockedSecret: number | null;
+  hasLockedSecret: boolean;
+  allSecretsLocked: boolean;
+  lockedPlayersCount: number;
+  totalPlayersCount: number;
+  targetOpponentName: string | null;
+  whoStartsFirstId: string | null;
+  whoStartsFirstName: string | null;
   // If paused due to player count < 2
   isPaused: boolean;
   pauseMessage: string | null;

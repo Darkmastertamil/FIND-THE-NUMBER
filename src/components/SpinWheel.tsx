@@ -126,10 +126,10 @@ export const SpinWheel: React.FC<SpinWheelProps> = ({
     <div className="flex flex-col items-center justify-center w-full max-w-md mx-auto p-4">
       {/* Status banner */}
       <div className="mb-4 text-center">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-amber-200 shadow-xs">
-          <Crown className={`w-4 h-4 ${isSpinning ? 'text-amber-500 animate-spin' : 'text-amber-600'}`} />
-          <span className="text-xs font-mono font-bold tracking-wider uppercase text-amber-800">
-            {isCompleted ? '👑 Number Setter Selected!' : isSpinning ? '🎡 Choosing Number Setter...' : 'Wheel Ready'}
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-purple-200 shadow-xs">
+          <Sparkles className={`w-4 h-4 ${isSpinning ? 'text-purple-500 animate-spin' : 'text-purple-600'}`} />
+          <span className="text-xs font-mono font-bold tracking-wider uppercase text-purple-800">
+            {isCompleted ? '🎯 First Guesser Selected!' : isSpinning ? '🎡 Choosing Who Starts First...' : 'Wheel Ready'}
           </span>
         </div>
       </div>
@@ -244,7 +244,7 @@ export const SpinWheel: React.FC<SpinWheelProps> = ({
               cy={center}
               r="34"
               fill="#ffffff"
-              stroke="#fbbf24"
+              stroke="#a855f7"
               strokeWidth="4"
               className="filter drop-shadow-sm"
             />
@@ -252,8 +252,8 @@ export const SpinWheel: React.FC<SpinWheelProps> = ({
               cx={center}
               cy={center}
               r="22"
-              fill="#fffbeb"
-              stroke="#f59e0b"
+              fill="#faf5ff"
+              stroke="#9333ea"
               strokeWidth="2"
             />
             <text
@@ -263,7 +263,7 @@ export const SpinWheel: React.FC<SpinWheelProps> = ({
               dominantBaseline="central"
               fontSize="16"
             >
-              👑
+              🎯
             </text>
           </svg>
         </div>
@@ -273,30 +273,30 @@ export const SpinWheel: React.FC<SpinWheelProps> = ({
       <div className="mt-6 text-center min-h-[4.5rem] flex flex-col items-center justify-center">
         {isCompleted ? (
           <div className="animate-scale-in">
-            <p className="text-xs font-mono uppercase tracking-widest text-amber-700 font-bold">
-              Chosen Number Setter
+            <p className="text-xs font-mono uppercase tracking-widest text-purple-700 font-bold">
+              Starts Guessing First
             </p>
             <div className="flex items-center justify-center gap-2 mt-1">
-              <Sparkles className="w-4 h-4 text-amber-500 animate-bounce" />
-              <h3 className="text-xl sm:text-2xl font-black font-mono text-amber-900 tracking-wider">
+              <Sparkles className="w-4 h-4 text-purple-500 animate-bounce" />
+              <h3 className="text-xl sm:text-2xl font-black font-mono text-purple-900 tracking-wider">
                 {selectedPlayerName}
               </h3>
-              <Sparkles className="w-4 h-4 text-amber-500 animate-bounce" />
+              <Sparkles className="w-4 h-4 text-purple-500 animate-bounce" />
             </div>
             {isCurrentUserSelected ? (
-              <p className="text-xs font-mono font-bold text-amber-700 mt-1 animate-pulse">
-                👑 YOU ARE THE NUMBER SETTER! Get ready to choose the secret number...
+              <p className="text-xs font-mono font-bold text-purple-700 mt-1 animate-pulse">
+                ⚡ YOU START GUESSING FIRST! Both players will now choose secret numbers...
               </p>
             ) : (
               <p className="text-xs font-mono font-bold text-slate-600 mt-1">
-                {selectedPlayerName} will choose the secret number (1–1000) for this round!
+                {selectedPlayerName} will take the first guess! Both players will now choose secret numbers...
               </p>
             )}
           </div>
         ) : (
           <div className="flex items-center gap-2 text-slate-500 font-mono text-sm">
-            <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping" />
-            <span>Spinning wheel (5 seconds) to choose the Number Setter...</span>
+            <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-500 animate-ping" />
+            <span>Spinning wheel (5 seconds) to choose who starts first...</span>
           </div>
         )}
       </div>

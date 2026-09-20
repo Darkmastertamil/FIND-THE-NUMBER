@@ -1,0 +1,6 @@
+{
+  "name": "Find The Number",
+  "description": "Real-time multiplayer party game of guessing numbers, server-authoritative secret numbers, fair turn cycles, and an animated spin wheel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

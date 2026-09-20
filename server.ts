@@ -36,11 +36,11 @@ function broadcastRoomState(room: InternalRoom) {
   }
 }
 
-// Helper: Trigger wheel spin and subsequent turn sequence
-function triggerWheelSpin(room: InternalRoom) {
+// Helper: Trigger 5-second wheel spin to choose who sets the number for the round
+function triggerSetterWheelSpin(room: InternalRoom) {
   engine.clearTimers(room);
 
-  const wheelData = engine.prepareNextWheelSelection(room);
+  const wheelData = engine.prepareSetterWheelSelection(room);
   if (!wheelData) {
     broadcastRoomState(room);
     return;
@@ -49,27 +49,22 @@ function triggerWheelSpin(room: InternalRoom) {
   broadcastRoomState(room);
   io.to(room.code).emit('wheelStarted', wheelData);
 
-  // Wheel animation runs on clients for wheelData.spinDurationMs
-  // Allow an extra 600ms cushion for deceleration settling
+  // Wheel animation runs on clients for exactly wheelData.spinDurationMs (5000ms)
+  // Allow an extra 1500ms celebration cushion so all players see who was chosen
   room.wheelTimer = setTimeout(() => {
     if (room.status !== 'wheel_spinning') return;
 
-    engine.startGuesserTurn(room);
+    engine.transitionToSetterSelection(room);
     broadcastRoomState(room);
-    io.to(room.code).emit('turnStarted', {
-      guesserId: room.currentGuesserId,
-      expiresAt: room.turnExpiresAt,
-      duration: room.turnDuration,
+    const setterPlayer = room.players.find((p) => p.id === room.setterId);
+    io.to(room.code).emit('setterChosen', {
+      setterId: room.setterId,
+      setterName: setterPlayer ? setterPlayer.name : 'Player',
     });
-
-    // Authoritative 15-second server turn timer
-    room.turnTimer = setTimeout(() => {
-      handleTurnTimeout(room);
-    }, room.turnDuration);
-  }, wheelData.spinDurationMs + 600);
+  }, wheelData.spinDurationMs + 1500);
 }
 
-// Helper: Handle when a player runs out of 15 seconds
+// Helper: Handle when a guesser runs out of 15 seconds
 function handleTurnTimeout(room: InternalRoom) {
   if (room.status !== 'guessing') return;
 
@@ -81,15 +76,27 @@ function handleTurnTimeout(room: InternalRoom) {
     message: `⏰ Time's up for ${guesserName}!`,
   });
 
-  // Brief pause before spinning wheel for the next player
+  // Brief pause before advancing turn to the next guesser
   setTimeout(() => {
-    const connectedGuessers = room.players.filter(
-      (p) => p.connected && p.id !== room.setterId
-    );
-    if (connectedGuessers.length > 0 && !room.isPaused) {
-      triggerWheelSpin(room);
+    if (room.status !== 'guessing' || room.isPaused) return;
+
+    const nextGuesser = engine.advanceGuesserTurn(room);
+    if (!nextGuesser) {
+      broadcastRoomState(room);
+      return;
     }
-  }, 1500);
+
+    broadcastRoomState(room);
+    io.to(room.code).emit('turnStarted', {
+      guesserId: room.currentGuesserId,
+      expiresAt: room.turnExpiresAt,
+      duration: room.turnDuration,
+    });
+
+    room.turnTimer = setTimeout(() => {
+      handleTurnTimeout(room);
+    }, room.turnDuration);
+  }, 1200);
 }
 
 io.on('connection', (socket: Socket) => {
@@ -161,8 +168,8 @@ io.on('connection', (socket: Socket) => {
     }
 
     if (typeof callback === 'function') callback({ success: true });
-    broadcastRoomState(room);
     io.to(room.code).emit('roundStarted', { round: room.round, setterId: room.setterId });
+    triggerSetterWheelSpin(room);
   });
 
   // SUBMIT SECRET NUMBER (SETTER ONLY)
@@ -185,16 +192,24 @@ io.on('connection', (socket: Socket) => {
 
       // Notify clients secret is locked
       io.to(room.code).emit('secretLocked', {
-        message: 'Secret number has been locked! Spinning wheel for first guesser...',
+        message: 'Secret number has been locked! Guessing phase begins now!',
       });
+
+      // Start guessing phase directly (turn-based guessing)
+      const firstGuesser = engine.startGuessingPhase(room);
       broadcastRoomState(room);
 
-      // Trigger first wheel spin after brief 1.2s delay for visual feedback
-      setTimeout(() => {
-        if (room.status === 'setter_selection' && room.secretNumber !== null) {
-          triggerWheelSpin(room);
-        }
-      }, 1200);
+      if (firstGuesser) {
+        io.to(room.code).emit('turnStarted', {
+          guesserId: room.currentGuesserId,
+          expiresAt: room.turnExpiresAt,
+          duration: room.turnDuration,
+        });
+
+        room.turnTimer = setTimeout(() => {
+          handleTurnTimeout(room);
+        }, room.turnDuration);
+      }
     }
   );
 
@@ -242,11 +257,32 @@ io.on('connection', (socket: Socket) => {
         });
         broadcastRoomState(room);
 
-        // Pause 1.8s so all players see HIGHER / LOWER result, then spin wheel for next turn
+        // Clear active turn timer
+        if (room.turnTimer) {
+          clearTimeout(room.turnTimer);
+          room.turnTimer = null;
+        }
+
+        // Pause 1.8s so all players see HIGHER / LOWER result, then advance turn to next guesser
         setTimeout(() => {
-          if (room.status === 'guessing' || room.status === 'wheel_spinning') {
-            triggerWheelSpin(room);
+          if (room.status !== 'guessing' || room.isPaused) return;
+
+          const nextGuesser = engine.advanceGuesserTurn(room);
+          if (!nextGuesser) {
+            broadcastRoomState(room);
+            return;
           }
+
+          broadcastRoomState(room);
+          io.to(room.code).emit('turnStarted', {
+            guesserId: room.currentGuesserId,
+            expiresAt: room.turnExpiresAt,
+            duration: room.turnDuration,
+          });
+
+          room.turnTimer = setTimeout(() => {
+            handleTurnTimeout(room);
+          }, room.turnDuration);
         }, 1800);
       }
     }
@@ -267,7 +303,11 @@ io.on('connection', (socket: Socket) => {
     }
 
     if (typeof callback === 'function') callback({ success: true });
-    broadcastRoomState(room);
+    if (room.status === 'wheel_spinning') {
+      triggerSetterWheelSpin(room);
+    } else {
+      broadcastRoomState(room);
+    }
   });
 
   // REMATCH / PLAY AGAIN
@@ -285,7 +325,11 @@ io.on('connection', (socket: Socket) => {
     }
 
     if (typeof callback === 'function') callback({ success: true });
-    broadcastRoomState(room);
+    if (room.status === 'wheel_spinning') {
+      triggerSetterWheelSpin(room);
+    } else {
+      broadcastRoomState(room);
+    }
   });
 
   // SYNC REQUEST (e.g. on client refresh or mount)
@@ -318,11 +362,22 @@ io.on('connection', (socket: Socket) => {
 
       broadcastRoomState(room);
 
-      if (shouldAdvanceTurn && !room.isPaused) {
+      if (room.status === 'wheel_spinning' && !room.isPaused) {
+        triggerSetterWheelSpin(room);
+      } else if (shouldAdvanceTurn && room.status === 'guessing' && !room.isPaused) {
         setTimeout(() => {
-          const eligible = room.players.filter((p) => p.connected && p.id !== room.setterId);
-          if (eligible.length > 0) {
-            triggerWheelSpin(room);
+          const nextGuesser = engine.advanceGuesserTurn(room);
+          if (nextGuesser) {
+            broadcastRoomState(room);
+            io.to(room.code).emit('turnStarted', {
+              guesserId: room.currentGuesserId,
+              expiresAt: room.turnExpiresAt,
+              duration: room.turnDuration,
+            });
+
+            room.turnTimer = setTimeout(() => {
+              handleTurnTimeout(room);
+            }, room.turnDuration);
           }
         }, 1000);
       }

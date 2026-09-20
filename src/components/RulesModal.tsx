@@ -46,38 +46,38 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
 
         {/* Rules list */}
         <div className="space-y-3 text-sm">
-          <div className="flex items-start gap-3 p-3 rounded-2xl bg-purple-50/60 border border-purple-100">
-            <span className="w-6 h-6 rounded-full bg-purple-200 text-purple-800 flex items-center justify-center text-xs font-mono font-black shrink-0 mt-0.5">
+          <div className="flex items-start gap-3 p-3 rounded-2xl bg-amber-50/60 border border-amber-100">
+            <span className="w-6 h-6 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-xs font-mono font-black shrink-0 mt-0.5">
               1
             </span>
             <div>
-              <p className="font-bold text-slate-800">Number Setter Chooses Secret</p>
+              <p className="font-bold text-slate-800">Spin Wheel Chooses Number Setter (5s)</p>
               <p className="text-slate-500 text-xs mt-0.5 font-medium">
-                Each round rotates a player to be the <span className="text-purple-700 font-bold">Number Setter</span>. They choose an integer between <span className="text-purple-900 font-mono font-bold">1 and 1000</span>.
+                At the start of every round, the animated spin wheel spins for <span className="text-amber-800 font-mono font-bold">5 seconds</span> to choose the <span className="text-amber-700 font-bold">Number Setter</span>. All players are on the wheel!
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-3 p-3 rounded-2xl bg-purple-50/50 border border-purple-100">
+            <span className="w-6 h-6 rounded-full bg-purple-200 text-purple-800 flex items-center justify-center text-xs font-mono font-black shrink-0 mt-0.5">
+              2
+            </span>
+            <div>
+              <p className="font-bold text-slate-800">Setter Chooses Secret Number</p>
+              <p className="text-slate-500 text-xs mt-0.5 font-medium">
+                The chosen Number Setter locks in a secret integer between <span className="text-purple-900 font-mono font-bold">1 and 1000</span>. The number stays strictly hidden from guessers.
               </p>
             </div>
           </div>
 
           <div className="flex items-start gap-3 p-3 rounded-2xl bg-pink-50/50 border border-pink-100">
             <span className="w-6 h-6 rounded-full bg-pink-200 text-pink-800 flex items-center justify-center text-xs font-mono font-black shrink-0 mt-0.5">
-              2
-            </span>
-            <div>
-              <p className="font-bold text-slate-800">Spin Wheel Selects Next Guesser</p>
-              <p className="text-slate-500 text-xs mt-0.5 font-medium">
-                The animated colorful spin wheel selects who guesses next. <span className="text-amber-700 font-bold">The Setter is excluded from the wheel</span>. Fair shuffle cycles guarantee equal turns.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3 p-3 rounded-2xl bg-amber-50/50 border border-amber-100">
-            <span className="w-6 h-6 rounded-full bg-amber-200 text-amber-800 flex items-center justify-center text-xs font-mono font-black shrink-0 mt-0.5">
               3
             </span>
             <div>
-              <p className="font-bold text-slate-800">15 Seconds Per Turn</p>
+              <p className="font-bold text-slate-800">Turn-Based Guessing (15s Turns)</p>
               <p className="text-slate-500 text-xs mt-0.5 font-medium">
-                The selected player has <span className="text-amber-700 font-mono font-bold">15 seconds</span> to enter their guess. The server timer will pass the turn if time runs out.
+                The remaining players take turns guessing. Each player has <span className="text-pink-700 font-mono font-bold">15 seconds</span> to submit their guess before the turn rotates.
               </p>
             </div>
           </div>

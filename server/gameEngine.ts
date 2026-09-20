@@ -242,10 +242,9 @@ export class GameEngine {
     return { success: true };
   }
 
-  public startRound(room: InternalRoom) {
+  public startRound(room: InternalRoom): WheelData | null {
     this.clearTimers(room);
 
-    room.status = 'setter_selection';
     room.secretNumber = null;
     room.possibleMin = 1;
     room.possibleMax = 1000;
@@ -257,17 +256,72 @@ export class GameEngine {
     room.roundWinner = null;
     room.isProcessingAction = false;
 
-    // Determine setter fairly based on setterIndex
     const connectedPlayers = room.players.filter((p) => p.connected);
     if (connectedPlayers.length < 2) {
       room.isPaused = true;
       room.pauseMessage = 'Waiting for another player to continue...';
-      return;
+      return null;
     }
 
-    const setterId = room.setterOrder[room.setterIndex % room.setterOrder.length];
-    const setterPlayer = connectedPlayers.find((p) => p.id === setterId) || connectedPlayers[0];
-    room.setterId = setterPlayer.id;
+    return this.prepareSetterWheelSelection(room);
+  }
+
+  public prepareSetterWheelSelection(room: InternalRoom): WheelData | null {
+    this.clearTimers(room);
+
+    const connectedPlayers = room.players.filter((p) => p.connected);
+    if (connectedPlayers.length < 2) {
+      room.isPaused = true;
+      room.pauseMessage = 'Waiting for another player to continue...';
+      return null;
+    }
+
+    // Determine setter fairly across rounds using setterOrder rotation
+    const availableOrder = room.setterOrder.filter((id) =>
+      connectedPlayers.some((p) => p.id === id)
+    );
+    const candidateOrder = availableOrder.length > 0 ? availableOrder : connectedPlayers.map((p) => p.id);
+    const chosenSetterId = candidateOrder[room.setterIndex % candidateOrder.length];
+    const selectedPlayer = connectedPlayers.find((p) => p.id === chosenSetterId) || connectedPlayers[0];
+    const selectedIndex = connectedPlayers.findIndex((p) => p.id === selectedPlayer.id);
+
+    // Calculate exact target rotation so top pointer lands on selected player's segment
+    const N = connectedPlayers.length;
+    const segAngle = 360 / N;
+    const centerAngle = selectedIndex * segAngle + segAngle / 2;
+    // Small random jitter within center of segment for optical variety
+    const jitter = (Math.random() - 0.5) * (segAngle * 0.3);
+    const fullSpins = 6; // 6 full rotations for a dramatic 5-second spin
+    const spinTargetDegrees = fullSpins * 360 + (360 - centerAngle) + jitter;
+
+    // Requested: exact 5 seconds (5000ms)
+    const spinDurationMs = 5000;
+
+    const wheelData: WheelData = {
+      selectedPlayerId: selectedPlayer.id,
+      selectedPlayerName: selectedPlayer.name,
+      eligiblePlayers: connectedPlayers.map((p) => ({
+        id: p.id,
+        name: p.name,
+        avatarColor: p.avatarColor,
+      })),
+      spinDurationMs,
+      spinTargetDegrees,
+      purpose: 'setter',
+    };
+
+    room.status = 'wheel_spinning';
+    room.wheelData = wheelData;
+    room.setterId = selectedPlayer.id;
+
+    return wheelData;
+  }
+
+  public transitionToSetterSelection(room: InternalRoom): void {
+    this.clearTimers(room);
+    room.status = 'setter_selection';
+    room.secretNumber = null;
+    room.isProcessingAction = false;
   }
 
   public setSecretNumber(
@@ -291,86 +345,63 @@ export class GameEngine {
     return { success: true };
   }
 
-  // Prepares and initiates the next spin wheel selection
-  public prepareNextWheelSelection(room: InternalRoom): WheelData | null {
+  // Starts the guessing phase after setter has locked the secret number
+  public startGuessingPhase(room: InternalRoom): InternalPlayer | null {
     this.clearTimers(room);
+    room.status = 'guessing';
+    room.possibleMin = 1;
+    room.possibleMax = 1000;
+    room.guesses = [];
+    room.lastGuessResult = null;
 
-    const eligiblePlayers = room.players.filter(
+    // Guessers are all connected players except the setter
+    const eligibleGuessers = room.players.filter(
       (p) => p.connected && p.id !== room.setterId
     );
 
-    if (eligiblePlayers.length === 0) {
+    if (eligibleGuessers.length === 0) {
       room.isPaused = true;
       room.pauseMessage = 'Waiting for eligible guessing players...';
       return null;
     }
 
-    // Refill and shuffle cycle if empty or out of bounds
-    if (room.guesserCycle.length === 0) {
-      // Shuffle eligible player IDs (Fisher-Yates)
-      const shuffled = eligiblePlayers.map((p) => p.id);
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-      room.guesserCycle = shuffled;
-    }
-
-    // Pick next player from cycle who is still connected
-    let nextPlayerId = room.guesserCycle.shift();
-    while (nextPlayerId && !eligiblePlayers.some((p) => p.id === nextPlayerId)) {
-      nextPlayerId = room.guesserCycle.shift();
-    }
-
-    // Fallback if needed
-    if (!nextPlayerId || !eligiblePlayers.some((p) => p.id === nextPlayerId)) {
-      nextPlayerId = eligiblePlayers[Math.floor(Math.random() * eligiblePlayers.length)].id;
-    }
-
-    const selectedPlayer = eligiblePlayers.find((p) => p.id === nextPlayerId)!;
-    const selectedIndex = eligiblePlayers.findIndex((p) => p.id === nextPlayerId);
-
-    // Calculate exact target rotation so top pointer lands on selected player's segment
-    // Circle: 360 deg. N segments.
-    // Each segment is (360 / N) deg.
-    // Segment i center angle = i * segAngle + segAngle / 2
-    // To rotate segment i to top (0 deg):
-    // targetAngle = 360 * 5 + (360 - centerAngle)
-    const N = eligiblePlayers.length;
-    const segAngle = 360 / N;
-    const centerAngle = selectedIndex * segAngle + segAngle / 2;
-    // Add small random jitter inside segment (+-25% of segAngle) for realism
-    const jitter = (Math.random() - 0.5) * (segAngle * 0.4);
-    const fullSpins = 4; // 4 full rotations
-    const spinTargetDegrees = fullSpins * 360 + (360 - centerAngle) + jitter;
-
-    const spinDurationMs = N === 1 ? 1500 : 3500;
-
-    const wheelData: WheelData = {
-      selectedPlayerId: selectedPlayer.id,
-      selectedPlayerName: selectedPlayer.name,
-      eligiblePlayers: eligiblePlayers.map((p) => ({
-        id: p.id,
-        name: p.name,
-        avatarColor: p.avatarColor,
-      })),
-      spinDurationMs,
-      spinTargetDegrees,
-    };
-
-    room.status = 'wheel_spinning';
-    room.wheelData = wheelData;
-    room.currentGuesserId = selectedPlayer.id;
-
-    return wheelData;
-  }
-
-  // Starts the guessing turn for currentGuesserId after wheel completes
-  public startGuesserTurn(room: InternalRoom): void {
-    this.clearTimers(room);
-    room.status = 'guessing';
+    // Initialize guesser cycle
+    room.guesserCycle = eligibleGuessers.map((p) => p.id);
+    const firstGuesser = eligibleGuessers[0];
+    room.currentGuesserId = firstGuesser.id;
     room.turnExpiresAt = Date.now() + room.turnDuration;
     room.isProcessingAction = false;
+    return firstGuesser;
+  }
+
+  // Advances turn to the next eligible guesser in sequence
+  public advanceGuesserTurn(room: InternalRoom): InternalPlayer | null {
+    this.clearTimers(room);
+    if (room.status !== 'guessing') return null;
+
+    const eligibleGuessers = room.players.filter(
+      (p) => p.connected && p.id !== room.setterId
+    );
+
+    if (eligibleGuessers.length === 0) {
+      room.isPaused = true;
+      room.pauseMessage = 'Waiting for eligible guessing players...';
+      return null;
+    }
+
+    let nextIdx = 0;
+    if (room.currentGuesserId) {
+      const currentIdx = eligibleGuessers.findIndex((p) => p.id === room.currentGuesserId);
+      if (currentIdx !== -1) {
+        nextIdx = (currentIdx + 1) % eligibleGuessers.length;
+      }
+    }
+
+    const nextGuesser = eligibleGuessers[nextIdx];
+    room.currentGuesserId = nextGuesser.id;
+    room.turnExpiresAt = Date.now() + room.turnDuration;
+    room.isProcessingAction = false;
+    return nextGuesser;
   }
 
   public submitGuess(
@@ -604,13 +635,13 @@ export class GameEngine {
 
     // Check if disconnected player was the active guesser
     let shouldAdvanceTurn = false;
-    if (room.currentGuesserId === player.id && (room.status === 'guessing' || room.status === 'wheel_spinning')) {
+    if (room.currentGuesserId === player.id && room.status === 'guessing') {
       shouldAdvanceTurn = true;
       this.clearTimers(room);
     }
 
-    // Check if disconnected player was setter during secret selection
-    if (room.setterId === player.id && room.status === 'setter_selection') {
+    // Check if disconnected player was setter during secret selection or setter wheel
+    if (room.setterId === player.id && (room.status === 'setter_selection' || room.status === 'wheel_spinning')) {
       room.setterIndex += 1;
       this.startRound(room);
     }

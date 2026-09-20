@@ -38,6 +38,7 @@ export interface WheelData {
   }[];
   spinDurationMs: number;
   spinTargetDegrees: number; // exact final rotation angle so wheel stops on selected player
+  purpose?: 'setter' | 'guesser';
 }
 
 export interface RoundWinner {

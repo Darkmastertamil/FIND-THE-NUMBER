@@ -115,9 +115,29 @@ export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
             </div>
           </div>
 
+          <div className="flex items-start gap-3 p-3 rounded-2xl bg-amber-50/60 border border-amber-200">
+            <span className="w-6 h-6 rounded-full bg-amber-200 text-amber-900 flex items-center justify-center text-xs font-mono font-black shrink-0 mt-0.5">
+              6
+            </span>
+            <div>
+              <p className="font-bold text-slate-800">Random Power-Up Spin Wheel</p>
+              <p className="text-slate-500 text-xs mt-0.5 font-medium">
+                After every round, spin the <span className="text-amber-800 font-bold">Power-Up Wheel</span>! A random player is awarded a tactical power-up:
+              </p>
+              <div className="grid grid-cols-2 gap-1.5 mt-2 text-[11px] font-mono text-slate-700">
+                <span>🌫️ <strong>Smoke Blind</strong>: Hide opponent's range</span>
+                <span>🔄 <strong>Secret Shift</strong>: Change secret number</span>
+                <span>🔍 <strong>Parity Clue</strong>: Reveal Even/Odd</span>
+                <span>✂️ <strong>Range Snip</strong>: Trim 50% numbers</span>
+                <span>⏳ <strong>Time Squeeze</strong>: Force 10s turn</span>
+                <span>🛡️ <strong>Energy Shield</strong>: Block 1 attack</span>
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-start gap-3 p-3 rounded-2xl bg-indigo-50/50 border border-indigo-100">
             <span className="w-6 h-6 rounded-full bg-indigo-200 text-indigo-800 flex items-center justify-center text-xs font-mono font-black shrink-0 mt-0.5">
-              6
+              7
             </span>
             <div>
               <p className="font-bold text-slate-800">5-Round Match & Rematch</p>

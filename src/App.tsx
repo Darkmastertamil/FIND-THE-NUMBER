@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ClientRoomState, Player } from './types';
+import { ClientRoomState, Player, PowerUpId } from './types';
 import {
   socket,
   getStoredPlayerInfo,
@@ -12,6 +12,7 @@ import { HomeScreen } from './screens/HomeScreen';
 import { LobbyScreen } from './screens/LobbyScreen';
 import { SetterScreen } from './screens/SetterScreen';
 import { WheelScreen } from './screens/WheelScreen';
+import { PowerUpWheel } from './components/PowerUpWheel';
 import { GuessingScreen } from './screens/GuessingScreen';
 import { RoundResultScreen } from './screens/RoundResultScreen';
 import { FinalResultScreen } from './screens/FinalResultScreen';
@@ -84,6 +85,16 @@ export default function App() {
       showToast(`👑 ${data.hostName} is now the host!`, 3000);
     };
 
+    const handlePowerUpAwarded = (data: { playerName: string; powerUpName: string }) => {
+      showToast(`🎁 ${data.playerName} unlocked ${data.powerUpName}!`, 3500);
+    };
+
+    const handlePowerUpUsed = (data: { message?: string }) => {
+      if (data.message) {
+        showToast(data.message, 3500);
+      }
+    };
+
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('roomStateUpdate', handleRoomStateUpdate);
@@ -91,6 +102,8 @@ export default function App() {
     socket.on('playerSecretLocked', handlePlayerSecretLocked);
     socket.on('allSecretsLocked', handleAllSecretsLocked);
     socket.on('hostTransferred', handleHostTransferred);
+    socket.on('powerUpAwarded', handlePowerUpAwarded);
+    socket.on('powerUpUsed', handlePowerUpUsed);
 
     // Initial state check
     if (socket.connected) {
@@ -105,6 +118,8 @@ export default function App() {
       socket.off('playerSecretLocked', handlePlayerSecretLocked);
       socket.off('allSecretsLocked', handleAllSecretsLocked);
       socket.off('hostTransferred', handleHostTransferred);
+      socket.off('powerUpAwarded', handlePowerUpAwarded);
+      socket.off('powerUpUsed', handlePowerUpUsed);
     };
   }, [showToast]);
 
@@ -235,6 +250,48 @@ export default function App() {
     });
   };
 
+  // Action: Spin Power-Up Wheel
+  const handleSpinPowerUpWheel = () => {
+    if (!room) return;
+    setIsLoading(true);
+    socket.emit('spinPowerUpWheel', { code: room.code, playerId }, (res: { success: boolean; error?: string }) => {
+      setIsLoading(false);
+      if (!res.success) {
+        showToast(res.error || 'Failed to start power-up wheel.');
+      }
+    });
+  };
+
+  // Action: Start Next Round after Power-Up Wheel
+  const handleStartNextRoundFromPowerUp = () => {
+    if (!room) return;
+    setIsLoading(true);
+    socket.emit('startNextRoundFromPowerUp', { code: room.code, playerId }, (res: { success: boolean; error?: string }) => {
+      setIsLoading(false);
+      if (!res.success) {
+        showToast(res.error || 'Failed to advance round.');
+      }
+    });
+  };
+
+  // Action: Use Power-Up
+  const handleUsePowerUp = (powerUpId: PowerUpId, newSecret?: number) => {
+    if (!room) return;
+    setIsLoading(true);
+    socket.emit(
+      'usePowerUp',
+      { code: room.code, playerId, powerUpId, newSecret },
+      (res: { success: boolean; message?: string; error?: string }) => {
+        setIsLoading(false);
+        if (!res.success) {
+          setActionError(res.error || 'Failed to activate power-up.');
+        } else if (res.message) {
+          showToast(res.message, 3500);
+        }
+      }
+    );
+  };
+
   // Action: Leave Room
   const handleLeaveRoom = () => {
     clearStoredRoom();
@@ -289,6 +346,7 @@ export default function App() {
             room={room}
             currentUserId={playerId}
             onSubmitGuess={handleSubmitGuess}
+            onUsePowerUp={handleUsePowerUp}
             isLoading={isLoading}
             actionError={actionError}
             onClearActionError={() => setActionError(null)}
@@ -300,6 +358,18 @@ export default function App() {
             room={room}
             currentUserId={playerId}
             onNextRound={handleNextRound}
+            onSpinPowerUpWheel={handleSpinPowerUpWheel}
+            isLoading={isLoading}
+          />
+        );
+      case 'powerup_wheel':
+        if (!room.powerUpWheelData) return null;
+        return (
+          <PowerUpWheel
+            wheelData={room.powerUpWheelData}
+            room={room}
+            currentUserId={playerId}
+            onNextRound={handleStartNextRoundFromPowerUp}
             isLoading={isLoading}
           />
         );

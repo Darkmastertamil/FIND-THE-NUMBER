@@ -1,6 +1,6 @@
 {
   "name": "Find The Number",
-  "description": "Real-time multiplayer party game of guessing numbers, server-authoritative secret numbers, fair turn cycles, and an animated spin wheel.",
+  "description": "Real-time multiplayer party duel game featuring simultaneous secret number selection, 30s turn guessing, higher/lower clues, and a post-round Power-Up Spin Wheel with blind, shield, and number shift abilities.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Target, ArrowUp, ArrowDown, AlertCircle, Send, Lock, ShieldCheck } from 'lucide-react';
-import { ClientRoomState } from '../types';
+import { ClientRoomState, PowerUpId } from '../types';
 import { TimerBar } from '../components/TimerBar';
 import { RangeVisualizer } from '../components/RangeVisualizer';
 import { GuessHistory } from '../components/GuessHistory';
 import { Leaderboard } from '../components/Leaderboard';
+import { PowerUpBar } from '../components/PowerUpBar';
 import { soundManager } from '../utils/audio';
 
 interface GuessingScreenProps {
   room: ClientRoomState;
   currentUserId: string;
   onSubmitGuess: (guess: number) => void;
+  onUsePowerUp: (powerUpId: PowerUpId, newSecret?: number) => void;
   isLoading: boolean;
   actionError: string | null;
   onClearActionError: () => void;
@@ -20,6 +22,7 @@ export const GuessingScreen: React.FC<GuessingScreenProps> = ({
   room,
   currentUserId,
   onSubmitGuess,
+  onUsePowerUp,
   isLoading,
   actionError,
   onClearActionError,
@@ -159,8 +162,20 @@ export const GuessingScreen: React.FC<GuessingScreenProps> = ({
           possibleMin={room.possibleMin}
           possibleMax={room.possibleMax}
           lastGuess={room.lastGuessResult?.guess}
+          isBlinded={room.myActiveEffects?.isBlinded}
         />
       </div>
+
+      {/* Power-Up Inventory and Active Effects Bar */}
+      <PowerUpBar
+        myPowerUps={room.myPowerUps || []}
+        myActiveEffects={room.myActiveEffects}
+        opponentActiveEffects={room.opponentActiveEffects}
+        targetOpponentName={targetOpponent}
+        onUsePowerUp={onUsePowerUp}
+        isLoading={isLoading}
+        recentPowerUpLog={room.recentPowerUpLog}
+      />
 
       {/* Guess Input Form for Active Guesser */}
       {isMyTurn ? (

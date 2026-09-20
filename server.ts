@@ -5,6 +5,7 @@ import path from 'path';
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { createServer as createViteServer } from 'vite';
 import { GameEngine, InternalRoom } from './server/gameEngine';
+import { PowerUpId } from './src/types';
 
 const PORT = Number(process.env.PORT) || 3000;
 const app = express();
@@ -61,6 +62,26 @@ function triggerFirstGuesserWheelSpin(room: InternalRoom) {
       firstGuesserId: room.firstGuesserId,
       firstGuesserName: firstGuesser ? firstGuesser.name : 'Player',
     });
+  }, wheelData.spinDurationMs + 1500);
+}
+
+// Helper: Run the 5-second Power-Up Wheel Spin
+function triggerPowerUpWheelSpin(room: InternalRoom) {
+  const wheelData = room.powerUpWheelData;
+  if (!wheelData) return;
+
+  broadcastRoomState(room);
+  io.to(room.code).emit('powerUpWheelStarted', wheelData);
+
+  room.powerUpTimer = setTimeout(() => {
+    if (room.status !== 'powerup_wheel') return;
+
+    const awardResult = engine.awardPowerUp(room);
+    broadcastRoomState(room);
+
+    if (awardResult) {
+      io.to(room.code).emit('powerUpAwarded', awardResult);
+    }
   }, wheelData.spinDurationMs + 1500);
 }
 
@@ -316,6 +337,87 @@ io.on('connection', (socket: Socket) => {
       broadcastRoomState(room);
     }
   });
+
+  // SPIN POWER-UP WHEEL (Between rounds bonus)
+  socket.on('spinPowerUpWheel', ({ code, playerId }: { code: string; playerId: string }, callback) => {
+    const room = engine.getRoom(code);
+    if (!room) {
+      if (typeof callback === 'function') callback({ success: false, error: 'Room not found.' });
+      return;
+    }
+
+    const wheelData = engine.preparePowerUpWheel(room);
+    if (!wheelData) {
+      if (typeof callback === 'function') callback({ success: false, error: 'Unable to start power-up wheel.' });
+      return;
+    }
+
+    if (typeof callback === 'function') callback({ success: true, wheelData });
+    triggerPowerUpWheelSpin(room);
+  });
+
+  // START NEXT ROUND AFTER POWER-UP WHEEL
+  socket.on('startNextRoundFromPowerUp', ({ code, playerId }: { code: string; playerId: string }, callback) => {
+    const room = engine.getRoom(code);
+    if (!room) {
+      if (typeof callback === 'function') callback({ success: false, error: 'Room not found.' });
+      return;
+    }
+
+    if (room.round >= room.maxRounds) {
+      engine.finishMatch(room);
+      broadcastRoomState(room);
+      if (typeof callback === 'function') callback({ success: true });
+      return;
+    }
+
+    room.round += 1;
+    room.setterIndex += 1;
+    room.powerUpWheelData = null;
+    engine.startRound(room);
+
+    if (typeof callback === 'function') callback({ success: true });
+    if (room.status === 'wheel_spinning') {
+      triggerFirstGuesserWheelSpin(room);
+    } else {
+      broadcastRoomState(room);
+    }
+  });
+
+  // USE POWER-UP (In-game duel activation)
+  socket.on(
+    'usePowerUp',
+    (
+      {
+        code,
+        playerId,
+        powerUpId,
+        newSecret,
+      }: { code: string; playerId: string; powerUpId: PowerUpId; newSecret?: number },
+      callback
+    ) => {
+      const room = engine.getRoom(code);
+      if (!room) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Room not found.' });
+        return;
+      }
+
+      const result = engine.usePowerUp(room, playerId, powerUpId, newSecret);
+      if (!result.success) {
+        if (typeof callback === 'function') callback({ success: false, error: result.error });
+        return;
+      }
+
+      if (typeof callback === 'function') callback({ success: true, message: result.message });
+      broadcastRoomState(room);
+
+      io.to(room.code).emit('powerUpUsed', {
+        playerId,
+        powerUpId,
+        message: result.message,
+      });
+    }
+  );
 
   // REMATCH / PLAY AGAIN
   socket.on('rematch', ({ code, playerId }: { code: string; playerId: string }, callback) => {

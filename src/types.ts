@@ -4,9 +4,101 @@ export type GameStatus =
   | 'wheel_spinning'
   | 'guessing'
   | 'round_result'
+  | 'powerup_wheel'
   | 'final_result';
 
 export type GuessEvaluation = 'HIGHER' | 'LOWER' | 'CORRECT';
+
+export type PowerUpId =
+  | 'blind_opponent'
+  | 'change_number'
+  | 'parity_clue'
+  | 'range_snip'
+  | 'time_squeeze'
+  | 'shield';
+
+export interface PowerUpDefinition {
+  id: PowerUpId;
+  name: string;
+  icon: string; // emoji
+  description: string;
+  color: string;
+  badgeBg: string;
+}
+
+export const POWER_UP_LIST: PowerUpDefinition[] = [
+  {
+    id: 'blind_opponent',
+    name: 'Smoke Blind',
+    icon: '🌫️',
+    description: 'Obscures opponent’s search range and slider in heavy fog for their next turn.',
+    color: '#64748b', // Slate
+    badgeBg: 'bg-slate-100 text-slate-800 border-slate-300',
+  },
+  {
+    id: 'change_number',
+    name: 'Secret Shift',
+    icon: '🔄',
+    description: 'Change your secret number to a new integer (1–1000) mid-match!',
+    color: '#8b5cf6', // Violet
+    badgeBg: 'bg-purple-100 text-purple-800 border-purple-300',
+  },
+  {
+    id: 'parity_clue',
+    name: 'Parity Clue',
+    icon: '🔍',
+    description: 'Immediately reveals whether opponent’s secret number is EVEN or ODD!',
+    color: '#0284c7', // Sky blue
+    badgeBg: 'bg-sky-100 text-sky-800 border-sky-300',
+  },
+  {
+    id: 'range_snip',
+    name: '50% Range Snip',
+    icon: '✂️',
+    description: 'Slices away 50% of the wrong search numbers, zooming closer to the secret!',
+    color: '#10b981', // Emerald
+    badgeBg: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+  },
+  {
+    id: 'time_squeeze',
+    name: 'Time Squeeze',
+    icon: '⏳',
+    description: 'Compresses opponent’s next turn to just 10 seconds of high pressure!',
+    color: '#f59e0b', // Amber
+    badgeBg: 'bg-amber-100 text-amber-800 border-amber-300',
+  },
+  {
+    id: 'shield',
+    name: 'Energy Shield',
+    icon: '🛡️',
+    description: 'Blocks the next negative attack (Blind or Time Squeeze) cast by opponent.',
+    color: '#ec4899', // Pink
+    badgeBg: 'bg-pink-100 text-pink-800 border-pink-300',
+  },
+];
+
+export interface PowerUpWheelData {
+  awardedPlayerId: string;
+  awardedPlayerName: string;
+  powerUpId: PowerUpId;
+  powerUpName: string;
+  powerUpDescription: string;
+  spinDurationMs: number;
+  spinTargetDegrees: number;
+  items: {
+    id: PowerUpId;
+    name: string;
+    icon: string;
+    color: string;
+  }[];
+}
+
+export interface PlayerActiveEffects {
+  isBlinded: boolean;
+  isShielded: boolean;
+  parityClue: 'EVEN' | 'ODD' | null;
+  isTimeSqueezed: boolean;
+}
 
 export interface Player {
   id: string;
@@ -101,6 +193,12 @@ export interface ClientRoomState {
   targetOpponentName: string | null;
   whoStartsFirstId: string | null;
   whoStartsFirstName: string | null;
+  // Power-Ups and Effects
+  powerUpWheelData: PowerUpWheelData | null;
+  myPowerUps: PowerUpId[];
+  myActiveEffects: PlayerActiveEffects;
+  opponentActiveEffects: { isBlinded: boolean; isShielded: boolean };
+  recentPowerUpLog: { message: string; timestamp: number } | null;
   // If paused due to player count < 2
   isPaused: boolean;
   pauseMessage: string | null;

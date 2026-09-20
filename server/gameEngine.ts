@@ -7,6 +7,10 @@ import {
   RoundWinner,
   WheelData,
   FinalResults,
+  PowerUpId,
+  PowerUpWheelData,
+  PlayerActiveEffects,
+  POWER_UP_LIST,
 } from '../src/types';
 
 export interface InternalPlayer extends Player {
@@ -33,6 +37,11 @@ export interface InternalRoom {
   playerSecrets: Record<string, number>; // secret number chosen by each player
   playerLockedSecrets: Record<string, boolean>; // whether player has locked their secret
   playerRanges: Record<string, { min: number; max: number }>; // search range for each player
+  playerPowerUps: Record<string, PowerUpId[]>; // inventory of power-ups for each player
+  playerActiveEffects: Record<string, PlayerActiveEffects>; // active effects per player
+  powerUpWheelData: PowerUpWheelData | null;
+  powerUpTimer: NodeJS.Timeout | null;
+  recentPowerUpLog: { message: string; timestamp: number } | null;
   turnExpiresAt: number | null;
   turnDuration: number;
   turnTimer: NodeJS.Timeout | null;
@@ -123,6 +132,11 @@ export class GameEngine {
       playerSecrets: {},
       playerLockedSecrets: {},
       playerRanges: {},
+      playerPowerUps: {},
+      playerActiveEffects: {},
+      powerUpWheelData: null,
+      powerUpTimer: null,
+      recentPowerUpLog: null,
       turnExpiresAt: null,
       turnDuration: 30000,
       turnTimer: null,
@@ -399,6 +413,14 @@ export class GameEngine {
     const firstGuesser =
       connectedPlayers.find((p) => p.id === room.firstGuesserId) || connectedPlayers[0];
     room.currentGuesserId = firstGuesser.id;
+    
+    if (room.playerActiveEffects[firstGuesser.id]?.isTimeSqueezed) {
+      room.turnDuration = 10000;
+      room.playerActiveEffects[firstGuesser.id].isTimeSqueezed = false;
+    } else {
+      room.turnDuration = 30000;
+    }
+
     room.turnExpiresAt = Date.now() + room.turnDuration;
     room.isProcessingAction = false;
     return firstGuesser;
@@ -408,6 +430,11 @@ export class GameEngine {
   public advanceGuesserTurn(room: InternalRoom): InternalPlayer | null {
     this.clearTimers(room);
     if (room.status !== 'guessing') return null;
+
+    // Clear blind on previous guesser if any
+    if (room.currentGuesserId && room.playerActiveEffects[room.currentGuesserId]?.isBlinded) {
+      room.playerActiveEffects[room.currentGuesserId].isBlinded = false;
+    }
 
     const connectedPlayers = room.players.filter((p) => p.connected);
     if (connectedPlayers.length < 2) {
@@ -426,6 +453,14 @@ export class GameEngine {
 
     const nextGuesser = connectedPlayers[nextIdx];
     room.currentGuesserId = nextGuesser.id;
+
+    if (room.playerActiveEffects[nextGuesser.id]?.isTimeSqueezed) {
+      room.turnDuration = 10000;
+      room.playerActiveEffects[nextGuesser.id].isTimeSqueezed = false;
+    } else {
+      room.turnDuration = 30000;
+    }
+
     room.turnExpiresAt = Date.now() + room.turnDuration;
     room.isProcessingAction = false;
     return nextGuesser;
@@ -503,6 +538,12 @@ export class GameEngine {
     };
 
     room.guesses.push(record);
+
+    // Clear blind effect after guessing
+    if (room.playerActiveEffects[playerId]?.isBlinded) {
+      room.playerActiveEffects[playerId].isBlinded = false;
+    }
+
     room.lastGuessResult = {
       guess: guessNumber,
       result,
@@ -628,8 +669,188 @@ export class GameEngine {
       p.roundWins = 0;
     }
 
+    room.playerPowerUps = {};
+    room.playerActiveEffects = {};
+    room.powerUpWheelData = null;
+    room.recentPowerUpLog = null;
+
     this.startRound(room);
     return { success: true };
+  }
+
+  public getDefaultActiveEffects(): PlayerActiveEffects {
+    return {
+      isBlinded: false,
+      isShielded: false,
+      parityClue: null,
+      isTimeSqueezed: false,
+    };
+  }
+
+  public preparePowerUpWheel(room: InternalRoom): PowerUpWheelData | null {
+    this.clearTimers(room);
+    const connectedPlayers = room.players.filter((p) => p.connected);
+    if (connectedPlayers.length === 0) return null;
+
+    // Pick a random connected player to receive the powerup
+    const luckyPlayer = connectedPlayers[Math.floor(Math.random() * connectedPlayers.length)];
+
+    // Pick a random power-up from POWER_UP_LIST
+    const chosenIndex = Math.floor(Math.random() * POWER_UP_LIST.length);
+    const chosenPowerUp = POWER_UP_LIST[chosenIndex];
+
+    const totalItems = POWER_UP_LIST.length;
+    const segmentAngle = 360 / totalItems;
+    const targetSegmentCenter = chosenIndex * segmentAngle + segmentAngle / 2;
+    const baseSpins = 5 + Math.floor(Math.random() * 3); // 5 to 7 full revolutions
+    const spinTargetDegrees = baseSpins * 360 + (360 - targetSegmentCenter);
+    const spinDurationMs = 5000;
+
+    const wheelData: PowerUpWheelData = {
+      awardedPlayerId: luckyPlayer.id,
+      awardedPlayerName: luckyPlayer.name,
+      powerUpId: chosenPowerUp.id,
+      powerUpName: chosenPowerUp.name,
+      powerUpDescription: chosenPowerUp.description,
+      spinDurationMs,
+      spinTargetDegrees,
+      items: POWER_UP_LIST.map((p) => ({
+        id: p.id,
+        name: p.name,
+        icon: p.icon,
+        color: p.color,
+      })),
+    };
+
+    room.status = 'powerup_wheel';
+    room.powerUpWheelData = wheelData;
+    return wheelData;
+  }
+
+  public awardPowerUp(room: InternalRoom): { playerId: string; playerName: string; powerUpId: PowerUpId; powerUpName: string } | null {
+    if (!room.powerUpWheelData) return null;
+    const { awardedPlayerId, awardedPlayerName, powerUpId, powerUpName } = room.powerUpWheelData;
+    if (!room.playerPowerUps[awardedPlayerId]) {
+      room.playerPowerUps[awardedPlayerId] = [];
+    }
+
+    // Max 3 power-ups in inventory
+    if (room.playerPowerUps[awardedPlayerId].length < 3) {
+      room.playerPowerUps[awardedPlayerId].push(powerUpId);
+    } else {
+      room.playerPowerUps[awardedPlayerId].shift();
+      room.playerPowerUps[awardedPlayerId].push(powerUpId);
+    }
+
+    room.recentPowerUpLog = {
+      message: `🎁 ${awardedPlayerName} received the ${powerUpName} power-up!`,
+      timestamp: Date.now(),
+    };
+
+    return { playerId: awardedPlayerId, playerName: awardedPlayerName, powerUpId, powerUpName };
+  }
+
+  public usePowerUp(
+    room: InternalRoom,
+    playerId: string,
+    powerUpId: PowerUpId,
+    newSecret?: number
+  ): { success: boolean; error?: string; message?: string } {
+    const user = room.players.find((p) => p.id === playerId);
+    if (!user) return { success: false, error: 'Player not found.' };
+
+    const inv = room.playerPowerUps[playerId] || [];
+    const idx = inv.indexOf(powerUpId);
+    if (idx === -1) {
+      return { success: false, error: 'You do not own this power-up.' };
+    }
+
+    const targetPlayer = this.getTargetPlayer(room, playerId);
+    if (!targetPlayer) {
+      return { success: false, error: 'No opponent found to target.' };
+    }
+
+    // Initialize active effects if not present
+    if (!room.playerActiveEffects[playerId]) {
+      room.playerActiveEffects[playerId] = this.getDefaultActiveEffects();
+    }
+    if (!room.playerActiveEffects[targetPlayer.id]) {
+      room.playerActiveEffects[targetPlayer.id] = this.getDefaultActiveEffects();
+    }
+
+    let message = '';
+
+    switch (powerUpId) {
+      case 'blind_opponent': {
+        if (room.playerActiveEffects[targetPlayer.id].isShielded) {
+          room.playerActiveEffects[targetPlayer.id].isShielded = false;
+          message = `🛡️ ${targetPlayer.name}'s Energy Shield blocked Smoke Blind from ${user.name}!`;
+        } else {
+          room.playerActiveEffects[targetPlayer.id].isBlinded = true;
+          message = `🌫️ ${user.name} cast Smoke Blind on ${targetPlayer.name}! Search range is obscured!`;
+        }
+        break;
+      }
+      case 'time_squeeze': {
+        if (room.playerActiveEffects[targetPlayer.id].isShielded) {
+          room.playerActiveEffects[targetPlayer.id].isShielded = false;
+          message = `🛡️ ${targetPlayer.name}'s Energy Shield blocked Time Squeeze from ${user.name}!`;
+        } else {
+          room.playerActiveEffects[targetPlayer.id].isTimeSqueezed = true;
+          message = `⏳ ${user.name} cast Time Squeeze on ${targetPlayer.name}! Next turn is 10 seconds!`;
+        }
+        break;
+      }
+      case 'shield': {
+        room.playerActiveEffects[playerId].isShielded = true;
+        message = `🛡️ ${user.name} deployed an Energy Shield!`;
+        break;
+      }
+      case 'change_number': {
+        if (!newSecret || !Number.isInteger(newSecret) || newSecret < 1 || newSecret > 1000) {
+          return { success: false, error: 'New secret must be an integer between 1 and 1000.' };
+        }
+        room.playerSecrets[playerId] = newSecret;
+        message = `🔄 ${user.name} used Secret Shift to secretly change their number!`;
+        break;
+      }
+      case 'parity_clue': {
+        const targetSecret = room.playerSecrets[targetPlayer.id];
+        if (targetSecret === undefined) {
+          return { success: false, error: 'Opponent secret number is not set.' };
+        }
+        const parity: 'EVEN' | 'ODD' = targetSecret % 2 === 0 ? 'EVEN' : 'ODD';
+        room.playerActiveEffects[playerId].parityClue = parity;
+        message = `🔍 ${user.name} revealed that ${targetPlayer.name}'s secret number is ${parity}!`;
+        break;
+      }
+      case 'range_snip': {
+        const targetSecret = room.playerSecrets[targetPlayer.id];
+        if (targetSecret === undefined) {
+          return { success: false, error: 'Opponent secret number is not set.' };
+        }
+        const myRange = room.playerRanges[playerId] || { min: 1, max: 1000 };
+        // Trim 50% of the wrong numbers either above or below targetSecret
+        if (targetSecret > myRange.min) {
+          const cut = Math.max(1, Math.floor((targetSecret - myRange.min) * 0.5));
+          myRange.min = Math.min(targetSecret, myRange.min + cut);
+        }
+        if (targetSecret < myRange.max) {
+          const cut = Math.max(1, Math.floor((myRange.max - targetSecret) * 0.5));
+          myRange.max = Math.max(targetSecret, myRange.max - cut);
+        }
+        room.playerRanges[playerId] = myRange;
+        message = `✂️ ${user.name} used 50% Range Snip! Search bounds narrowed to ${myRange.min} – ${myRange.max}!`;
+        break;
+      }
+    }
+
+    // Consume power-up
+    inv.splice(idx, 1);
+    room.playerPowerUps[playerId] = inv;
+    room.recentPowerUpLog = { message, timestamp: Date.now() };
+
+    return { success: true, message };
   }
 
   public handleDisconnect(socketId: string): {
@@ -693,6 +914,10 @@ export class GameEngine {
       clearTimeout(room.wheelTimer);
       room.wheelTimer = null;
     }
+    if (room.powerUpTimer) {
+      clearTimeout(room.powerUpTimer);
+      room.powerUpTimer = null;
+    }
   }
 
   // Produces a client-safe snapshot of the room state.
@@ -716,6 +941,15 @@ export class GameEngine {
     const hasLockedSecret = requestingPlayerId ? !!room.playerLockedSecrets[requestingPlayerId] : false;
     const lockedPlayersCount = connectedPlayers.filter((p) => room.playerLockedSecrets[p.id]).length;
     const allSecretsLocked = connectedPlayers.length >= 2 && lockedPlayersCount === connectedPlayers.length;
+
+    const myPowerUps = (requestingPlayerId && room.playerPowerUps[requestingPlayerId]) || [];
+    const myActiveEffects = (requestingPlayerId && room.playerActiveEffects[requestingPlayerId]) || this.getDefaultActiveEffects();
+    const opponentActiveEffects = targetPlayer && room.playerActiveEffects[targetPlayer.id]
+      ? {
+          isBlinded: !!room.playerActiveEffects[targetPlayer.id].isBlinded,
+          isShielded: !!room.playerActiveEffects[targetPlayer.id].isShielded,
+        }
+      : { isBlinded: false, isShielded: false };
 
     return {
       code: room.code,
@@ -753,6 +987,11 @@ export class GameEngine {
       targetOpponentName: targetPlayer ? targetPlayer.name : null,
       whoStartsFirstId: room.firstGuesserId,
       whoStartsFirstName: firstGuesser ? firstGuesser.name : null,
+      powerUpWheelData: room.powerUpWheelData,
+      myPowerUps,
+      myActiveEffects,
+      opponentActiveEffects,
+      recentPowerUpLog: room.recentPowerUpLog,
       isPaused: room.isPaused,
       pauseMessage: room.pauseMessage,
     };

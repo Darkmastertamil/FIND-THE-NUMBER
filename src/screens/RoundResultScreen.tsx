@@ -9,6 +9,7 @@ interface RoundResultScreenProps {
   room: ClientRoomState;
   currentUserId: string;
   onNextRound: () => void;
+  onSpinPowerUpWheel: () => void;
   isLoading: boolean;
 }
 
@@ -16,6 +17,7 @@ export const RoundResultScreen: React.FC<RoundResultScreenProps> = ({
   room,
   currentUserId,
   onNextRound,
+  onSpinPowerUpWheel,
   isLoading,
 }) => {
   const isHost = room.hostId === currentUserId;
@@ -96,22 +98,33 @@ export const RoundResultScreen: React.FC<RoundResultScreenProps> = ({
         </div>
 
         {/* Next Round Action */}
-        <div className="mt-6">
+        <div className="mt-6 space-y-2.5">
           {room.round < room.maxRounds ? (
             isHost ? (
-              <button
-                id="next-round-btn"
-                onClick={onNextRound}
-                disabled={isLoading}
-                className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-purple-500 via-pink-400 to-rose-400 hover:opacity-95 text-white font-mono font-black text-sm tracking-wider uppercase transition shadow-md shadow-purple-200 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                <span>{isLoading ? 'Starting Round...' : `START ROUND ${room.round + 1} / ${room.maxRounds}`}</span>
-                <ArrowRight className="w-4 h-4 text-white" />
-              </button>
+              <>
+                <button
+                  id="spin-powerup-wheel-btn"
+                  onClick={onSpinPowerUpWheel}
+                  disabled={isLoading}
+                  className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:opacity-95 text-white font-mono font-black text-sm tracking-wider uppercase transition shadow-lg shadow-amber-200 cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 group hover:scale-[1.01] active:scale-[0.99]"
+                >
+                  <Sparkles className="w-5 h-5 text-amber-200 group-hover:rotate-12 transition-transform" />
+                  <span>{isLoading ? 'Spinning...' : '🎡 SPIN POWER-UP WHEEL (Random Player Bonus!)'}</span>
+                </button>
+
+                <button
+                  id="skip-to-round-btn"
+                  onClick={onNextRound}
+                  disabled={isLoading}
+                  className="text-xs font-mono text-slate-400 hover:text-slate-600 transition underline cursor-pointer"
+                >
+                  Skip bonus & start Round {room.round + 1} directly →
+                </button>
+              </>
             ) : (
               <div className="py-3 px-4 rounded-2xl bg-purple-50 border border-purple-200 text-purple-700 font-mono text-xs font-semibold flex items-center justify-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping" />
-                <span>Waiting for host to start Round {room.round + 1}...</span>
+                <span>Waiting for host to spin the Power-Up Wheel for Round {room.round + 1}...</span>
               </div>
             )
           ) : (

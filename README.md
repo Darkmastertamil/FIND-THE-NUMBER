@@ -104,6 +104,16 @@ Runs the compiled server at `dist/server.cjs`.
 
 ---
 
+## ☁️ Deployment on Render (render.com)
+
+When deploying this project as a **Web Service** on Render:
+
+1. **Build Command**: `npm install && npm run build`
+2. **Start Command**: `npm start` (or `node dist/server.cjs`)
+3. The build compiles the frontend with Vite to `dist/` and bundles the backend server to `dist/server.cjs` via esbuild. Express serves the static assets and handles real-time Socket.IO game traffic.
+
+---
+
 ## ⚙️ Environment Variables
 
 Declared in `.env.example`:
